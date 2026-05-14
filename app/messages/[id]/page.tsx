@@ -253,7 +253,7 @@ export default function PrivateChatPage() {
                 </div>
                 {!isConsecutive && (
                   <span className={`text-[9px] text-zinc-600 mt-1 px-1 font-mono uppercase tracking-wider ${isMe ? 'text-right' : 'text-left'}`}>
-                    {new Date(msg.created_at).toLocaleTimeString([], { hour: '2d', minute: '2d' })}
+                    {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 )}
               </div>
