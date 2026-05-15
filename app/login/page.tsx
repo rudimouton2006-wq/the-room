@@ -14,7 +14,6 @@ export default function LoginPage() {
   const router = useRouter()
   const supabase = createClient()
 
-  // Standard Email/Password Login
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
@@ -31,7 +30,6 @@ export default function LoginPage() {
     }
   }
 
-  // Google OAuth Login
   const handleGoogleLogin = async () => {
     await supabase.auth.signInWithOAuth({
       provider: 'google',
@@ -43,67 +41,66 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-[80vh] items-center justify-center p-4">
-      <div className="w-full max-w-md space-y-8 rounded-xl border border-zinc-200 bg-white p-6 shadow-sm">
+      {/* Dark mode container */}
+      <div className="w-full max-w-md space-y-8 rounded-xl border border-zinc-800 bg-zinc-950 p-6 shadow-xl">
         <div className="text-center">
-          <h2 className="text-2xl font-bold tracking-tight">Sign in to The Room</h2>
-          <p className="mt-2 text-sm text-zinc-600">Enter your details to access the marketplace.</p>
+          <h2 className="text-2xl font-bold tracking-tight text-white">Sign in to The Room</h2>
+          <p className="mt-2 text-sm text-zinc-400">Enter your details to access the marketplace.</p>
         </div>
 
-        {/* Email Login Form */}
         <form onSubmit={handleLogin} className="space-y-4">
           {error && (
-            <div className="rounded bg-red-50 p-3 text-sm text-red-600 border border-red-100">
+            <div className="rounded bg-red-950/50 p-3 text-sm text-red-400 border border-red-900">
               {error}
             </div>
           )}
 
           <div>
-            <label className="mb-1 block text-sm font-medium">Email</label>
+            <label className="mb-1 block text-sm font-medium text-zinc-300">Email</label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="w-full rounded-md border border-zinc-300 px-3 py-2 focus:border-black focus:outline-none focus:ring-1 focus:ring-black"
+              className="w-full rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2 text-white focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 placeholder:text-zinc-600"
+              placeholder="student@cput.ac.za"
             />
           </div>
 
           <div>
-            <label className="mb-1 block text-sm font-medium">Password</label>
+            <label className="mb-1 block text-sm font-medium text-zinc-300">Password</label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              className="w-full rounded-md border border-zinc-300 px-3 py-2 focus:border-black focus:outline-none focus:ring-1 focus:ring-black"
+              className="w-full rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2 text-white focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
             />
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="flex w-full items-center justify-center gap-2 rounded-md bg-black px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-50"
+            className="flex w-full items-center justify-center gap-2 rounded-md bg-white px-4 py-2.5 text-sm font-medium text-black transition-colors hover:bg-zinc-200 disabled:opacity-50"
           >
             <LogIn className="h-4 w-4" />
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
 
-        {/* Google Sign-In Divider */}
         <div className="relative my-6">
           <div className="absolute inset-0 flex items-center">
-            <span className="w-full border-t border-zinc-300" />
+            <span className="w-full border-t border-zinc-800" />
           </div>
           <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-white px-2 text-zinc-500 tracking-wider">Or continue with</span>
+            <span className="bg-zinc-950 px-2 text-zinc-500 tracking-wider">Or continue with</span>
           </div>
         </div>
 
-        {/* Google Sign-In Button */}
         <button
           onClick={handleGoogleLogin}
           type="button"
-          className="flex w-full items-center justify-center gap-2 rounded-md border border-zinc-300 bg-white px-4 py-2.5 text-sm font-medium text-black transition-colors hover:bg-zinc-50"
+          className="flex w-full items-center justify-center gap-2 rounded-md border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-zinc-800"
         >
           <svg className="h-5 w-5" viewBox="0 0 24 24">
             <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
@@ -114,10 +111,9 @@ export default function LoginPage() {
           Google
         </button>
 
-        {/* Footer Link */}
-        <p className="text-center text-sm text-zinc-600">
+        <p className="text-center text-sm text-zinc-400">
           Don't have an account?{' '}
-          <Link href="/signup" className="font-semibold text-black hover:underline">
+          <Link href="/signup" className="font-semibold text-white hover:underline">
             Sign up
           </Link>
         </p>
