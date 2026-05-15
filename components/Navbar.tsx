@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
-import { Hexagon, Home, MessageSquare, Settings, LogIn, Plus } from 'lucide-react'
+import { Hexagon, Home, MessageSquare, Settings, LogIn, Plus, Package } from 'lucide-react'
 
 export default function Navbar() {
   const [session, setSession] = useState<any>(null)
@@ -53,6 +53,9 @@ export default function Navbar() {
               <>
                 <Link href="/messages" className={`transition-colors pb-1 border-b-2 flex items-center gap-2 ${isActive('/messages') ? "text-white border-primary" : "text-zinc-500 border-transparent hover:text-zinc-300"}`}>
                   Messages
+                </Link>
+                <Link href="/my-listings" className={`transition-colors pb-1 border-b-2 flex items-center gap-2 ${isActive('/my-listings') ? "text-white border-primary" : "text-zinc-500 border-transparent hover:text-zinc-300"}`}>
+                  My Listings
                 </Link>
                 <Link href="/settings" className={`transition-colors pb-1 border-b-2 flex items-center gap-2 ${isActive('/settings') ? "text-white border-primary" : "text-zinc-500 border-transparent hover:text-zinc-300"}`}>
                   Settings
@@ -105,10 +108,16 @@ export default function Navbar() {
           </Link>
 
           {session ? (
-            <Link href="/settings" className={`flex flex-col items-center justify-center w-16 h-full transition-colors group ${isActive('/settings') ? 'text-primary' : 'text-zinc-500 hover:text-zinc-300'}`}>
-              <Settings className="w-6 h-6 mb-1 transition-transform group-hover:scale-110" />
-              <span className="text-[9px] font-bold tracking-widest uppercase">Settings</span>
-            </Link>
+            <>
+              <Link href="/my-listings" className={`flex flex-col items-center justify-center w-16 h-full transition-colors group ${isActive('/my-listings') ? 'text-primary' : 'text-zinc-500 hover:text-zinc-300'}`}>
+                <Package className="w-6 h-6 mb-1 transition-transform group-hover:scale-110" />
+                <span className="text-[9px] font-bold tracking-widest uppercase">Listings</span>
+              </Link>
+              <Link href="/settings" className={`flex flex-col items-center justify-center w-16 h-full transition-colors group ${isActive('/settings') ? 'text-primary' : 'text-zinc-500 hover:text-zinc-300'}`}>
+                <Settings className="w-6 h-6 mb-1 transition-transform group-hover:scale-110" />
+                <span className="text-[9px] font-bold tracking-widest uppercase">Settings</span>
+              </Link>
+            </>
           ) : (
             <Link href="/login" className="flex flex-col items-center justify-center w-16 h-full text-zinc-500 hover:text-white transition-colors group">
               <LogIn className="w-6 h-6 mb-1 transition-transform group-hover:scale-110" />
