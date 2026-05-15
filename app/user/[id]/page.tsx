@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useParams } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { useParams, useRouter } from 'next/navigation'
+import { createClient } from '../../../lib/supabase/client'
 import Link from 'next/link'
 import Image from 'next/image'
 import { UserX, Inbox, ArrowLeft, PackageOpen } from 'lucide-react'

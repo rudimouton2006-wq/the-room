@@ -1,7 +1,6 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-// This explicitly exports the middleware function Next.js is looking for
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({
     request: {
@@ -20,18 +19,14 @@ export async function middleware(request: NextRequest) {
         set(name: string, value: string, options: CookieOptions) {
           request.cookies.set({ name, value, ...options })
           response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
+            request: { headers: request.headers },
           })
           response.cookies.set({ name, value, ...options })
         },
         remove(name: string, options: CookieOptions) {
           request.cookies.set({ name, value: '', ...options })
           response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
+            request: { headers: request.headers },
           })
           response.cookies.set({ name, value: '', ...options })
         },
@@ -41,17 +36,14 @@ export async function middleware(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser()
 
-  const protectedRoutes = ['/messages', '/settings', '/marketplace/upload']
-  const isProtectedRoute = protectedRoutes.some(path => request.nextUrl.pathname.startsWith(path))
-
-  if (isProtectedRoute && !user) {
+  // Protect the "Post Item" route. If no user, redirect to sign-in.
+  if (!user && request.nextUrl.pathname.startsWith('/marketplace/upload')) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
   return response
 }
 
-// The config determines which routes this middleware runs on
 export const config = {
   matcher: [
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
