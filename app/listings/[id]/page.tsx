@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import Image from 'next/image'
 import { useToast } from '@/components/ToastProvider'
-import { Ban, PackageOpen, ArrowLeft, CheckCircle } from 'lucide-react'
+import { Ban, PackageOpen, ArrowLeft, CheckCircle, Trash2 } from 'lucide-react'
 
 export default function ListingDetailPage() {
   const { id } = useParams()
@@ -15,59 +15,89 @@ export default function ListingDetailPage() {
   const { toast } = useToast()
   
   const [listing, setListing] = useState<any>(null)
+  const [currentUser, setCurrentUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [isMessaging, setIsMessaging] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
   const [isNotFound, setIsNotFound] = useState(false)
 
   useEffect(() => {
     let isMounted = true;
 
-    const fetchListing = async () => {
+    const fetchListingAndUser = async () => {
       try {
         setLoading(true)
-        const { data, error } = await supabase
+        
+        // Fetch the listing data
+        const { data: listingData, error: listingError } = await supabase
           .from('listings')
           .select('*')
           .eq('id', id)
           .single()
 
-        if (error && error.code === 'PGRST116') {
+        if (listingError && listingError.code === 'PGRST116') {
           if (isMounted) setIsNotFound(true)
           return
         }
         
-        if (error) throw error
+        if (listingError) throw listingError
         
+        // Fetch the currently logged-in user to see if they own this listing
+        const { data: { user } } = await supabase.auth.getUser()
+
         if (isMounted) {
-          setListing(data)
+          setListing(listingData)
+          setCurrentUser(user)
         }
       } catch (error) {
-        console.error('Listing fetch error:', error)
+        console.error('Fetch error:', error)
         if (isMounted) setIsNotFound(true)
       } finally {
         if (isMounted) setLoading(false)
       }
     }
 
-    if (id) fetchListing()
+    if (id) fetchListingAndUser()
 
     return () => {
       isMounted = false;
     }
   }, [id, supabase])
 
+  const handleDeleteListing = async () => {
+    const isConfirmed = window.confirm("Are you sure you want to permanently delete this item from The Room?")
+    if (!isConfirmed) return
+
+    try {
+      setIsDeleting(true)
+      const { error } = await supabase
+        .from('listings')
+        .delete()
+        .eq('id', id)
+
+      if (error) throw error
+
+      toast("Listing successfully removed.", "success")
+      router.push('/rooms')
+      router.refresh()
+    } catch (error) {
+      console.error("Error deleting listing:", error)
+      toast("Failed to delete the listing. Please try again.", "error")
+      setIsDeleting(false)
+    }
+  }
+
   const handleStartChat = async () => {
     try {
       setIsMessaging(true)
-      const { data: { user } } = await supabase.auth.getUser()
       
-      if (!user) {
+      if (!currentUser) {
         toast("You must be signed in to message a seller.", "info")
         router.push('/login')
         return
       }
       
-      if (user.id === listing.user_id) {
+      if (currentUser.id === listing.user_id) {
         toast("This is your own listing! You cannot message yourself.", "error")
         setIsMessaging(false)
         return
@@ -77,7 +107,7 @@ export default function ListingDetailPage() {
         .from('conversations')
         .insert({
           listing_id: id,
-          buyer_id: user.id,
+          buyer_id: currentUser.id,
           seller_id: listing.user_id
         })
         .select()
@@ -88,7 +118,7 @@ export default function ListingDetailPage() {
           .from('conversations')
           .select('id')
           .eq('listing_id', id)
-          .eq('buyer_id', user.id)
+          .eq('buyer_id', currentUser.id)
           .single()
           
          if (existingError) throw existingError;
@@ -150,6 +180,9 @@ export default function ListingDetailPage() {
       </div>
     )
   }
+
+  // Check if the current logged in user owns this specific item
+  const isOwner = currentUser?.id === listing.user_id
 
   return (
     <div className="min-h-screen text-foreground pb-24 pt-8 px-6 selection:bg-primary/30 relative z-10">
@@ -221,21 +254,43 @@ export default function ListingDetailPage() {
             </Link>
 
             <div className="flex flex-col sm:flex-row gap-4 mt-auto">
-              <button 
-                onClick={handleStartChat}
-                disabled={isMessaging}
-                className="relative w-full py-5 bg-primary hover:bg-blue-500 text-white text-lg font-bold rounded-2xl transition-all duration-300 shadow-xl shadow-primary/20 hover:-translate-y-1 active:translate-y-0 disabled:opacity-50 disabled:hover:translate-y-0 flex justify-center items-center gap-3 overflow-hidden group/btn"
-              >
-                <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent group-hover/btn:animate-[shimmer_1.5s_infinite]" />
-                {isMessaging ? (
-                  <>
-                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Connecting...
-                  </>
-                ) : (
-                  'Message Seller'
-                )}
-              </button>
+              {isOwner ? (
+                // Owner View: Show Delete Button
+                <button 
+                  onClick={handleDeleteListing}
+                  disabled={isDeleting}
+                  className="relative w-full py-5 bg-red-600/10 hover:bg-red-600/20 border border-red-600/30 text-red-500 hover:text-red-400 text-lg font-bold rounded-2xl transition-all duration-300 shadow-xl shadow-red-900/10 hover:-translate-y-1 active:translate-y-0 disabled:opacity-50 flex justify-center items-center gap-3"
+                >
+                  {isDeleting ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-red-500/30 border-t-red-500 rounded-full animate-spin" />
+                      Deleting...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-5 h-5" />
+                      Remove My Listing
+                    </>
+                  )}
+                </button>
+              ) : (
+                // Buyer View: Show Message Button
+                <button 
+                  onClick={handleStartChat}
+                  disabled={isMessaging}
+                  className="relative w-full py-5 bg-primary hover:bg-blue-500 text-white text-lg font-bold rounded-2xl transition-all duration-300 shadow-xl shadow-primary/20 hover:-translate-y-1 active:translate-y-0 disabled:opacity-50 flex justify-center items-center gap-3 overflow-hidden group/btn"
+                >
+                  <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent group-hover/btn:animate-[shimmer_1.5s_infinite]" />
+                  {isMessaging ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Connecting...
+                    </>
+                  ) : (
+                    'Message Seller'
+                  )}
+                </button>
+              )}
             </div>
             
           </div>
