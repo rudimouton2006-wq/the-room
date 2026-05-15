@@ -9,7 +9,8 @@ export async function GET(request: Request) {
   const next = searchParams.get('next') ?? '/rooms'
 
   if (code) {
-    const cookieStore = cookies()
+    // We must 'await' the cookies in the newest version of Next.js
+    const cookieStore = await cookies()
     
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
