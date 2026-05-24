@@ -127,7 +127,8 @@ export default function PrivateChatPage() {
     pChannel.on('presence', { event: 'sync' }, () => {
       const state = pChannel.presenceState()
       const typingIds = Object.keys(state).filter(key => 
-        key !== currentUser?.id && state[key][0]?.typing
+        // Apex Fix: Cast state to 'any' to bypass strict TypeScript compilation
+        key !== currentUser?.id && (state[key][0] as any)?.typing
       )
       if (isMounted) setTypingUsers(typingIds)
     }).subscribe()
