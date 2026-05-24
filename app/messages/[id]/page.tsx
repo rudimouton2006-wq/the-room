@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
-import { ArrowLeft, Send, PackageOpen, Loader2, ImagePlus, Check, CheckCheck } from 'lucide-react'
+import { ArrowLeft, Send, PackageOpen, Loader2, ImagePlus, Check, CheckCheck, User } from 'lucide-react'
 
 export default function PrivateChatPage() {
   const { id } = useParams()
@@ -14,6 +14,7 @@ export default function PrivateChatPage() {
   const [message, setMessage] = useState('')
   const [messages, setMessages] = useState<any[]>([])
   const [currentUser, setCurrentUser] = useState<any>(null)
+  const [otherUserName, setOtherUserName] = useState<string>('Student')
   const [convDetails, setConvDetails] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   
@@ -41,6 +42,7 @@ export default function PrivateChatPage() {
 
         if (isMounted) setCurrentUser(user)
 
+        // Fetch Conversation Details
         const { data: conv, error: convError } = await supabase
           .from('conversations')
           .select(`*, listing:listing_id (title, price, image_url)`)
@@ -56,6 +58,17 @@ export default function PrivateChatPage() {
 
         if (isMounted) setConvDetails(conv)
 
+        // Securely fetch the other user's name
+        const otherPersonId = user.id === conv.buyer_id ? conv.seller_id : conv.buyer_id
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('username')
+          .eq('id', otherPersonId)
+          .single()
+        
+        if (profile && isMounted) setOtherUserName(profile.username)
+
+        // Fetch Historical Messages
         const { data: msgs, error: msgError } = await supabase
           .from('messages')
           .select('*')
@@ -84,10 +97,7 @@ export default function PrivateChatPage() {
 
     if (id) setupChat()
 
-    // ==========================================
-    // APEX FIX: THE UNIFIED REAL-TIME ENGINE
-    // ==========================================
-    // We bind Postgres Changes AND Presence tracking to the EXACT SAME WebSocket connection.
+    // Unified Real-Time Engine
     const channel = supabase.channel(`unified-room-${id}`, {
       config: { presence: { key: currentUser?.id || 'unknown' } }
     })
@@ -119,14 +129,15 @@ export default function PrivateChatPage() {
       })
       .on('presence', { event: 'sync' }, () => {
         const state = channel.presenceState()
-        const typingIds = Object.keys(state).filter(key => 
-          key !== currentUser?.id && (state[key][0] as any)?.typing
-        )
+        const typingIds = Object.keys(state).filter(key => {
+          // TypeScript Bypass: Cast to any to prevent Vercel build crashes
+          const presenceData = state[key][0] as any;
+          return key !== currentUser?.id && presenceData?.typing;
+        })
         if (isMounted) setTypingUsers(typingIds)
       })
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED' && isMounted) {
-          // Tell the room we connected, but are not typing yet
           await channel.track({ typing: false })
         }
       })
@@ -148,24 +159,17 @@ export default function PrivateChatPage() {
     }
   }, [messages, typingUsers])
 
-  // --- TYPING INDICATOR HANDLER ---
   const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setMessage(e.target.value)
 
     if (realtimeChannel) {
       realtimeChannel.track({ typing: true })
-      
       if (typingTimeout) clearTimeout(typingTimeout)
-      
-      const timeout = setTimeout(() => {
-        realtimeChannel.track({ typing: false })
-      }, 2000)
-      
+      const timeout = setTimeout(() => { realtimeChannel.track({ typing: false }) }, 2000)
       setTypingTimeout(timeout)
     }
   }
 
-  // --- TEXT SEND ---
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!message.trim() || !currentUser) return
@@ -205,14 +209,12 @@ export default function PrivateChatPage() {
     }
   }
 
-  // --- IMAGE UPLOAD ENGINE ---
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file || !currentUser) return
 
-    // File size guard (Max 5MB) to prevent silent hangs
-    if (file.size > 5 * 1024 * 1024) {
-      alert("Image is too large. Please select an image under 5MB.")
+    if (file.size > 20 * 1024 * 1024) {
+      alert("Image is too large. Please select an image under 20MB.")
       if (fileInputRef.current) fileInputRef.current.value = ''
       return
     }
@@ -268,7 +270,7 @@ export default function PrivateChatPage() {
 
   if (loading) {
     return (
-      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0a0a0a]">
+      <div className="fixed inset-0 z-[999] flex items-center justify-center bg-[#0a0a0a]">
         <Loader2 className="w-10 h-10 text-primary animate-spin" />
       </div>
     )
@@ -278,20 +280,23 @@ export default function PrivateChatPage() {
   const title = isDeleted ? 'Archived / Sold Item' : convDetails.listing.title
   const price = isDeleted ? null : convDetails.listing.price
   const imageUrl = isDeleted ? null : convDetails.listing.image_url
+  const isBuyer = currentUser?.id === convDetails?.buyer_id
 
   return (
     <div 
-      className="fixed inset-0 z-[100] w-full flex flex-col bg-[#0a0a0a] selection:bg-primary/30 overflow-hidden"
+      className="fixed top-0 left-0 w-full z-[999] flex flex-col bg-[#0a0a0a] selection:bg-primary/30 overflow-hidden"
       style={{ height: '100dvh', maxHeight: '-webkit-fill-available' }}
     >
 
-      <header className={`shrink-0 px-4 py-3 border-b flex items-center justify-between z-20 shadow-sm ${isDeleted ? 'bg-zinc-950 border-white/5' : 'bg-zinc-950/90 backdrop-blur-2xl border-white/10'}`}>
+      {/* 1. Ultra-Premium Header */}
+      <header className={`shrink-0 px-4 py-3 flex items-center justify-between z-20 shadow-md ${isDeleted ? 'bg-zinc-950 border-b border-white/5' : 'bg-zinc-900/95 backdrop-blur-3xl border-b border-white/10'}`}>
         <div className="flex items-center min-w-0 w-full gap-3">
-          <Link href="/messages" className="text-zinc-400 hover:text-white transition-colors p-3 -ml-3 rounded-2xl active:bg-white/5 shrink-0">
+          
+          <Link href="/messages" className="text-zinc-400 hover:text-white transition-colors p-2 -ml-2 rounded-2xl active:bg-white/5 shrink-0">
             <ArrowLeft className="w-6 h-6" />
           </Link>
 
-          <div className={`w-11 h-11 rounded-xl overflow-hidden shrink-0 relative shadow-inner ${isDeleted ? 'bg-black border border-dashed border-zinc-700' : 'bg-zinc-800 border border-white/10'}`}>
+          <div className={`w-12 h-12 rounded-xl overflow-hidden shrink-0 relative shadow-inner ${isDeleted ? 'bg-black border border-dashed border-zinc-700' : 'bg-zinc-800 border border-white/10'}`}>
             {imageUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={imageUrl} className="w-full h-full object-cover" alt="Item" />
@@ -303,19 +308,28 @@ export default function PrivateChatPage() {
           </div>
 
           <div className="min-w-0 flex flex-col justify-center flex-1">
-            <h2 className={`font-bold text-[15px] leading-tight truncate ${isDeleted ? 'text-zinc-500 line-through' : 'text-zinc-100'}`}>
+            <h2 className={`font-bold text-base leading-tight truncate ${isDeleted ? 'text-zinc-500 line-through' : 'text-white'}`}>
               {title}
             </h2>
-            <div className="flex items-center gap-2 mt-0.5">
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <User className="w-3 h-3 text-zinc-400" />
+              <span className="text-xs text-zinc-400 font-medium truncate">
+                {isBuyer ? 'Buying from' : 'Selling to'} <span className="text-primary font-bold">{otherUserName}</span>
+              </span>
               {price && !isDeleted && (
-                <span className="text-[13px] text-primary font-black tracking-tight">R{price}</span>
+                <>
+                  <span className="text-zinc-600 text-[10px]">•</span>
+                  <span className="text-[12px] text-zinc-300 font-bold tracking-tight">R{price}</span>
+                </>
               )}
             </div>
           </div>
+          
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto overscroll-none p-4 space-y-4 flex flex-col">
+      {/* 2. Chat Feed Area */}
+      <div className="flex-1 overflow-y-auto overscroll-none p-4 space-y-4 flex flex-col relative">
         {messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center opacity-50 pb-10 flex-1">
             <PackageOpen className="w-12 h-12 mb-4 text-zinc-500" />
@@ -329,7 +343,7 @@ export default function PrivateChatPage() {
 
             return (
               <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} ${isConsecutive ? 'mt-1' : 'mt-4'}`}>
-                <div className={`px-3 py-2.5 max-w-[85%] md:max-w-[70%] text-[15px] leading-relaxed break-words shadow-sm flex flex-col ${
+                <div className={`px-4 py-2.5 max-w-[85%] md:max-w-[70%] text-[15px] leading-relaxed break-words shadow-sm flex flex-col ${
                   isMe
                     ? 'bg-primary text-white rounded-2xl rounded-tr-sm'
                     : 'bg-zinc-800 border border-white/5 text-zinc-100 rounded-2xl rounded-tl-sm'
@@ -347,9 +361,9 @@ export default function PrivateChatPage() {
                       {msg.isOptimistic ? (
                         <span className="text-[9px] text-white/70 uppercase tracking-widest font-bold">Sending</span>
                       ) : msg.is_read ? (
-                        <CheckCheck className="w-3.5 h-3.5 text-blue-300" />
+                        <CheckCheck className="w-4 h-4 text-blue-300" />
                       ) : (
-                        <Check className="w-3.5 h-3.5 text-white/70" />
+                        <Check className="w-4 h-4 text-white/70" />
                       )}
                     </div>
                   )}
@@ -363,7 +377,7 @@ export default function PrivateChatPage() {
         {/* Unified Typing Indicator */}
         {typingUsers.length > 0 && (
           <div className="flex items-start mt-2 animate-in fade-in slide-in-from-bottom-2">
-            <div className="bg-zinc-800 border border-white/5 text-zinc-400 px-4 py-2.5 rounded-2xl rounded-tl-sm flex items-center gap-1.5">
+            <div className="bg-zinc-800 border border-white/5 text-zinc-400 px-4 py-3 rounded-2xl rounded-tl-sm flex items-center gap-1.5">
                <span className="w-1.5 h-1.5 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
                <span className="w-1.5 h-1.5 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
                <span className="w-1.5 h-1.5 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
@@ -371,10 +385,11 @@ export default function PrivateChatPage() {
           </div>
         )}
         
-        <div ref={scrollRef} className="h-2 shrink-0" />
+        <div ref={scrollRef} className="h-4 shrink-0" />
       </div>
 
-      <div className="shrink-0 bg-zinc-950 border-t border-white/10 p-3 pb-[calc(max(env(safe-area-inset-bottom),12px))]">
+      {/* 3. Input Engine - Fully Locked for Mobile Keyboards */}
+      <div className="shrink-0 bg-zinc-950/95 backdrop-blur-xl border-t border-white/10 p-3 pb-[calc(max(env(safe-area-inset-bottom),16px))]">
         {isDeleted && (
           <div className="mb-3 text-[10px] text-center text-zinc-500 font-bold uppercase tracking-widest flex items-center justify-center gap-2">
             <span className="w-4 h-px bg-white/10 flex-1"></span>
@@ -404,7 +419,7 @@ export default function PrivateChatPage() {
           <input
             value={message}
             onChange={handleTextChange}
-            placeholder="Type a message..."
+            placeholder="Message..."
             className="flex-1 bg-black border border-white/10 rounded-full pl-5 pr-14 py-3.5 text-[15px] text-white focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50 transition-all shadow-inner"
             autoComplete="off"
             enterKeyHint="send" 
