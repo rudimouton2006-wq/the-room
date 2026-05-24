@@ -36,12 +36,12 @@ export default function PrivateChatPage() {
 
         if (isMounted) setCurrentUser(user)
 
-        // 2. Fetch Conversation & Listing Context
+        // 2. Fetch Conversation & Listing Context (FIXED: Removed 'status' column)
         const { data: conv, error: convError } = await supabase
           .from('conversations')
           .select(`
             *,
-            listing:listing_id (title, price, image_url, status)
+            listing:listing_id (title, price, image_url)
           `)
           .eq('id', id)
           .single()
