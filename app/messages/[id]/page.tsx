@@ -17,8 +17,8 @@ export default function PrivateChatPage() {
   const [convDetails, setConvDetails] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   
-  // V2 Features State
-  const [presenceChannel, setPresenceChannel] = useState<any>(null)
+  // V2 Unified State
+  const [realtimeChannel, setRealtimeChannel] = useState<any>(null)
   const [typingUsers, setTypingUsers] = useState<string[]>([])
   const [typingTimeout, setTypingTimeout] = useState<NodeJS.Timeout | null>(null)
   const [isUploading, setIsUploading] = useState(false)
@@ -56,7 +56,6 @@ export default function PrivateChatPage() {
 
         if (isMounted) setConvDetails(conv)
 
-        // Fetch Historical Messages
         const { data: msgs, error: msgError } = await supabase
           .from('messages')
           .select('*')
@@ -65,13 +64,11 @@ export default function PrivateChatPage() {
 
         if (msgError) throw msgError
         
-        // --- READ RECEIPTS (ON LOAD) ---
-        // Find messages sent by the OTHER person that are currently unread, and mark them read
+        // Mark unread messages as read on load
         const unreadMsgs = msgs?.filter(m => m.sender_id !== user.id && !m.is_read) || []
         if (unreadMsgs.length > 0) {
           const unreadIds = unreadMsgs.map(m => m.id)
           await supabase.from('messages').update({ is_read: true }).in('id', unreadIds)
-          // Optimistically update local array so they don't re-trigger
           msgs?.forEach(m => { if (unreadIds.includes(m.id)) m.is_read = true })
         }
 
@@ -87,11 +84,17 @@ export default function PrivateChatPage() {
 
     if (id) setupChat()
 
-    // --- REAL-TIME ENGINE (INSERTS & UPDATES) ---
-    const channel = supabase
-      .channel(`conv-${id}`)
+    // ==========================================
+    // APEX FIX: THE UNIFIED REAL-TIME ENGINE
+    // ==========================================
+    // We bind Postgres Changes AND Presence tracking to the EXACT SAME WebSocket connection.
+    const channel = supabase.channel(`unified-room-${id}`, {
+      config: { presence: { key: currentUser?.id || 'unknown' } }
+    })
+
+    channel
       .on('postgres_changes', {
-        event: '*', // Listen to ALL events now, so we catch 'is_read' updates
+        event: '*', 
         schema: 'public',
         table: 'messages',
         filter: `conversation_id=eq.${id}`
@@ -99,13 +102,11 @@ export default function PrivateChatPage() {
         if (!isMounted) return;
 
         if (payload.eventType === 'INSERT') {
-          // If the message is from the OTHER person, mark it as read immediately
           const newMsg = payload.new
           if (newMsg.sender_id !== currentUser?.id) {
             await supabase.from('messages').update({ is_read: true }).eq('id', newMsg.id)
-            newMsg.is_read = true // Optimistic flag
+            newMsg.is_read = true 
           }
-
           setMessages((prev) => {
             const filtered = prev.filter(m => !(m.isOptimistic && m.content === newMsg.content && m.image_url === newMsg.image_url))
             if (filtered.some(m => m.id === newMsg.id)) return filtered
@@ -113,36 +114,32 @@ export default function PrivateChatPage() {
           })
         } 
         else if (payload.eventType === 'UPDATE') {
-          // Update the message in state (flips the ticks to blue)
           setMessages((prev) => prev.map(m => m.id === payload.new.id ? payload.new : m))
         }
       })
-      .subscribe()
+      .on('presence', { event: 'sync' }, () => {
+        const state = channel.presenceState()
+        const typingIds = Object.keys(state).filter(key => 
+          key !== currentUser?.id && (state[key][0] as any)?.typing
+        )
+        if (isMounted) setTypingUsers(typingIds)
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED' && isMounted) {
+          // Tell the room we connected, but are not typing yet
+          await channel.track({ typing: false })
+        }
+      })
 
-    // --- PRESENCE ENGINE (TYPING INDICATORS) ---
-    const pChannel = supabase.channel(`presence-${id}`, {
-      config: { presence: { key: currentUser?.id || 'unknown' } }
-    })
-
-    pChannel.on('presence', { event: 'sync' }, () => {
-      const state = pChannel.presenceState()
-      const typingIds = Object.keys(state).filter(key => 
-        // Apex Fix: Cast state to 'any' to bypass strict TypeScript compilation
-        key !== currentUser?.id && (state[key][0] as any)?.typing
-      )
-      if (isMounted) setTypingUsers(typingIds)
-    }).subscribe()
-
-    if (isMounted) setPresenceChannel(pChannel)
+    if (isMounted) setRealtimeChannel(channel)
 
     return () => {
       isMounted = false;
       supabase.removeChannel(channel)
-      supabase.removeChannel(pChannel)
     }
   }, [id, router, supabase, currentUser?.id])
 
-  // Aggressive Auto-Scroll
+  // Auto-Scroll Engine
   useEffect(() => {
     if (scrollRef.current) {
       setTimeout(() => {
@@ -155,27 +152,27 @@ export default function PrivateChatPage() {
   const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setMessage(e.target.value)
 
-    if (presenceChannel) {
-      presenceChannel.track({ typing: true })
+    if (realtimeChannel) {
+      realtimeChannel.track({ typing: true })
       
       if (typingTimeout) clearTimeout(typingTimeout)
       
       const timeout = setTimeout(() => {
-        presenceChannel.track({ typing: false })
+        realtimeChannel.track({ typing: false })
       }, 2000)
       
       setTypingTimeout(timeout)
     }
   }
 
-  // --- STANDARD MESSAGE SEND ---
+  // --- TEXT SEND ---
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!message.trim() || !currentUser) return
 
     const textToSend = message.trim()
     setMessage('') 
-    if (presenceChannel) presenceChannel.track({ typing: false })
+    if (realtimeChannel) realtimeChannel.track({ typing: false })
 
     const tempId = `temp-${Date.now()}`
     const optimisticMsg = {
@@ -213,9 +210,14 @@ export default function PrivateChatPage() {
     const file = e.target.files?.[0]
     if (!file || !currentUser) return
 
-    setIsUploading(true)
+    // File size guard (Max 5MB) to prevent silent hangs
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Image is too large. Please select an image under 5MB.")
+      if (fileInputRef.current) fileInputRef.current.value = ''
+      return
+    }
 
-    // Generate local preview for optimistic UI
+    setIsUploading(true)
     const tempId = `temp-img-${Date.now()}`
     const localUrl = URL.createObjectURL(file)
     
@@ -235,19 +237,16 @@ export default function PrivateChatPage() {
       const fileExt = file.name.split('.').pop()
       const fileName = `${id}/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`
 
-      // 1. Upload to chat_images bucket
       const { error: uploadError } = await supabase.storage
         .from('chat_images')
         .upload(fileName, file)
 
       if (uploadError) throw uploadError
 
-      // 2. Get Public URL
       const { data: { publicUrl } } = supabase.storage
         .from('chat_images')
         .getPublicUrl(fileName)
 
-      // 3. Insert into database
       const { error: dbError } = await supabase.from('messages').insert({
         content: '',
         image_url: publicUrl,
@@ -259,11 +258,10 @@ export default function PrivateChatPage() {
 
     } catch (error) {
       console.error('Image Upload Error:', error)
-      alert('Failed to send image.')
+      alert('Failed to send image. Ensure your storage bucket permissions are set.')
       setMessages(prev => prev.filter(m => m.id !== tempId)) 
     } finally {
       setIsUploading(false)
-      // Reset input so you can upload the same file again if needed
       if (fileInputRef.current) fileInputRef.current.value = ''
     }
   }
@@ -287,7 +285,6 @@ export default function PrivateChatPage() {
       style={{ height: '100dvh', maxHeight: '-webkit-fill-available' }}
     >
 
-      {/* 1. Premium Header Area */}
       <header className={`shrink-0 px-4 py-3 border-b flex items-center justify-between z-20 shadow-sm ${isDeleted ? 'bg-zinc-950 border-white/5' : 'bg-zinc-950/90 backdrop-blur-2xl border-white/10'}`}>
         <div className="flex items-center min-w-0 w-full gap-3">
           <Link href="/messages" className="text-zinc-400 hover:text-white transition-colors p-3 -ml-3 rounded-2xl active:bg-white/5 shrink-0">
@@ -318,7 +315,6 @@ export default function PrivateChatPage() {
         </div>
       </header>
 
-      {/* 2. Chat Feed Area */}
       <div className="flex-1 overflow-y-auto overscroll-none p-4 space-y-4 flex flex-col">
         {messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center opacity-50 pb-10 flex-1">
@@ -339,16 +335,13 @@ export default function PrivateChatPage() {
                     : 'bg-zinc-800 border border-white/5 text-zinc-100 rounded-2xl rounded-tl-sm'
                 } ${msg.isOptimistic ? 'opacity-80' : 'opacity-100'}`}>
                   
-                  {/* Image Attachment Rendering */}
                   {msg.image_url && (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={msg.image_url} alt="Attached" className="w-full max-w-sm rounded-xl mb-1.5 object-cover" />
                   )}
                   
-                  {/* Text Content */}
                   {msg.content && <span>{msg.content}</span>}
                   
-                  {/* Read Receipts (Sender Only) */}
                   {isMe && (
                     <div className="flex justify-end mt-1 items-center gap-1">
                       {msg.isOptimistic ? (
@@ -367,7 +360,7 @@ export default function PrivateChatPage() {
           })
         )}
         
-        {/* Typing Indicator */}
+        {/* Unified Typing Indicator */}
         {typingUsers.length > 0 && (
           <div className="flex items-start mt-2 animate-in fade-in slide-in-from-bottom-2">
             <div className="bg-zinc-800 border border-white/5 text-zinc-400 px-4 py-2.5 rounded-2xl rounded-tl-sm flex items-center gap-1.5">
@@ -381,7 +374,6 @@ export default function PrivateChatPage() {
         <div ref={scrollRef} className="h-2 shrink-0" />
       </div>
 
-      {/* 3. Input Engine */}
       <div className="shrink-0 bg-zinc-950 border-t border-white/10 p-3 pb-[calc(max(env(safe-area-inset-bottom),12px))]">
         {isDeleted && (
           <div className="mb-3 text-[10px] text-center text-zinc-500 font-bold uppercase tracking-widest flex items-center justify-center gap-2">
@@ -393,7 +385,6 @@ export default function PrivateChatPage() {
         
         <form onSubmit={sendMessage} className="max-w-4xl mx-auto flex gap-2 relative items-center">
           
-          {/* Image Upload Button */}
           <input 
             type="file" 
             ref={fileInputRef} 
@@ -405,7 +396,7 @@ export default function PrivateChatPage() {
             type="button" 
             onClick={() => fileInputRef.current?.click()} 
             disabled={isUploading}
-            className="p-2.5 text-zinc-400 hover:text-white transition-colors disabled:opacity-50"
+            className="p-2.5 text-zinc-400 hover:text-white transition-colors disabled:opacity-50 shrink-0"
           >
             {isUploading ? <Loader2 className="w-6 h-6 animate-spin" /> : <ImagePlus className="w-6 h-6" />}
           </button>
