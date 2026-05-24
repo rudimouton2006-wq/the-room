@@ -28,7 +28,6 @@ export default function ListingDetailPage() {
       try {
         setLoading(true)
         
-        // Fetch the listing data
         const { data: listingData, error: listingError } = await supabase
           .from('listings')
           .select('*')
@@ -42,7 +41,6 @@ export default function ListingDetailPage() {
         
         if (listingError) throw listingError
         
-        // Fetch the currently logged-in user to see if they own this listing
         const { data: { user } } = await supabase.auth.getUser()
 
         if (isMounted) {
@@ -64,12 +62,24 @@ export default function ListingDetailPage() {
     }
   }, [id, supabase])
 
+  // UPDATED: Now handles image deletion
   const handleDeleteListing = async () => {
     const isConfirmed = window.confirm("Are you sure you want to permanently delete this item from The Room?")
     if (!isConfirmed) return
 
     try {
       setIsDeleting(true)
+
+      // 1. Delete the image from the bucket
+      if (listing?.image_url) {
+        const urlParts = listing.image_url.split('/listings/')
+        if (urlParts.length > 1) {
+          const filePath = urlParts[1]
+          await supabase.storage.from('listings').remove([filePath])
+        }
+      }
+
+      // 2. Delete the row from the database
       const { error } = await supabase
         .from('listings')
         .delete()
@@ -181,7 +191,6 @@ export default function ListingDetailPage() {
     )
   }
 
-  // Check if the current logged in user owns this specific item
   const isOwner = currentUser?.id === listing.user_id
 
   return (
@@ -255,7 +264,6 @@ export default function ListingDetailPage() {
 
             <div className="flex flex-col sm:flex-row gap-4 mt-auto">
               {isOwner ? (
-                // Owner View: Show Delete Button
                 <button 
                   onClick={handleDeleteListing}
                   disabled={isDeleting}
@@ -274,7 +282,6 @@ export default function ListingDetailPage() {
                   )}
                 </button>
               ) : (
-                // Buyer View: Show Message Button
                 <button 
                   onClick={handleStartChat}
                   disabled={isMessaging}

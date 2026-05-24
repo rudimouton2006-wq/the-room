@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '../../lib/supabase/client'
+import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import Image from 'next/image'
 import { Trash2, PackageOpen, ArrowRight } from 'lucide-react'
@@ -23,7 +23,6 @@ export default function MyListingsDashboard() {
     try {
       setLoading(true)
       
-      // 1. Get the current logged-in user
       const { data: { user } } = await supabase.auth.getUser()
       
       if (!user) {
@@ -31,7 +30,6 @@ export default function MyListingsDashboard() {
         return
       }
 
-      // 2. Fetch only items owned by this exact user
       const { data, error } = await supabase
         .from('listings')
         .select('*')
@@ -49,11 +47,22 @@ export default function MyListingsDashboard() {
     }
   }
 
-  const handleDelete = async (id: string) => {
+  // UPDATED: Now accepts imageUrl and deletes it from the bucket
+  const handleDelete = async (id: string, imageUrl: string | null) => {
     const isConfirmed = window.confirm("Are you sure you want to permanently delete this item?")
     if (!isConfirmed) return
 
     try {
+      // 1. Delete the image from the bucket to save space
+      if (imageUrl) {
+        const urlParts = imageUrl.split('/listings/')
+        if (urlParts.length > 1) {
+          const filePath = urlParts[1]
+          await supabase.storage.from('listings').remove([filePath])
+        }
+      }
+
+      // 2. Delete the row from the database
       const { error } = await supabase
         .from('listings')
         .delete()
@@ -110,7 +119,6 @@ export default function MyListingsDashboard() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {listings.map((item) => (
             <div key={item.id} className="group bg-[#0a0a0a] border border-white/5 rounded-3xl overflow-hidden flex flex-col hover:border-white/10 transition-colors">
-              {/* Image Header */}
               <div className="relative aspect-video w-full bg-zinc-900 border-b border-white/5 overflow-hidden">
                 {item.image_url ? (
                   <Image src={item.image_url} alt={item.title} fill className="object-cover group-hover:scale-105 transition-transform duration-500" />
@@ -122,7 +130,6 @@ export default function MyListingsDashboard() {
                 </div>
               </div>
               
-              {/* Content Body */}
               <div className="p-6 flex flex-col flex-grow">
                 <div className="flex justify-between items-start gap-4 mb-4">
                   <h3 className="font-bold text-lg text-white leading-tight line-clamp-2">{item.title}</h3>
@@ -131,7 +138,6 @@ export default function MyListingsDashboard() {
                 
                 <div className="flex-grow"></div>
                 
-                {/* Action Buttons */}
                 <div className="flex gap-3 mt-6 pt-6 border-t border-white/5">
                   <Link href={`/listings/${item.id}`} className="flex-1">
                     <button className="w-full py-2.5 bg-white/5 hover:bg-white/10 text-white text-sm font-bold rounded-xl transition-colors flex items-center justify-center gap-2">
@@ -139,7 +145,7 @@ export default function MyListingsDashboard() {
                     </button>
                   </Link>
                   <button 
-                    onClick={() => handleDelete(item.id)}
+                    onClick={() => handleDelete(item.id, item.image_url)} // UPDATED to pass image URL
                     className="p-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 rounded-xl transition-colors flex items-center justify-center group/delete"
                     title="Delete Listing"
                   >

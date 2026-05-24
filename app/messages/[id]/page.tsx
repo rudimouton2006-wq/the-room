@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
+import { ArrowLeft, Send, PackageOpen, Loader2 } from 'lucide-react'
 
 export default function PrivateChatPage() {
   const { id } = useParams()
@@ -35,14 +36,12 @@ export default function PrivateChatPage() {
         
         if (isMounted) setCurrentUser(user)
 
-        // 2. Fetch Conversation & Listing Context (with safe joins)
+        // 2. Fetch Conversation & Listing Context
         const { data: conv, error: convError } = await supabase
           .from('conversations')
           .select(`
             *, 
-            listing:listing_id (title, price, image_url, status),
-            seller:seller_id (username),
-            buyer:buyer_id (username)
+            listing:listing_id (title, price, image_url, status)
           `)
           .eq('id', id)
           .single()
@@ -51,7 +50,7 @@ export default function PrivateChatPage() {
         
         // Security Check: Ensure user belongs in this chat
         if (user.id !== conv.buyer_id && user.id !== conv.seller_id) {
-          router.push('/messages')
+          router.push('/rooms')
           return
         }
 
@@ -69,7 +68,7 @@ export default function PrivateChatPage() {
 
       } catch (error) {
         console.error("Chat Initialization Error:", error)
-        if (isMounted) router.push('/messages')
+        if (isMounted) router.push('/rooms')
       } finally {
         if (isMounted) setLoading(false)
       }
@@ -87,6 +86,7 @@ export default function PrivateChatPage() {
         filter: `conversation_id=eq.${id}` 
       }, (payload) => {
         if (isMounted) {
+          // Instantly add the new message to the screen when the database updates
           setMessages((prev) => [...prev, payload.new])
         }
       })
@@ -114,16 +114,15 @@ export default function PrivateChatPage() {
     setIsSending(true)
 
     try {
+      // Note: Using 'content' and 'sender_id' to match our secure database schema
       const { error } = await supabase.from('messages').insert({
-        text: textToSend,
+        content: textToSend,
         conversation_id: id,
-        user_id: currentUser.id,
-        user_email: currentUser.email
+        sender_id: currentUser.id
       })
 
       if (error) {
-        // Revert UI if send fails
-        setMessage(textToSend)
+        setMessage(textToSend) // Revert UI if send fails
         throw error
       }
     } catch (error) {
@@ -134,32 +133,13 @@ export default function PrivateChatPage() {
     }
   }
 
-  // Helper to determine partner name
-  const getPartnerName = () => {
-    if (!currentUser || !convDetails) return 'Student'
-    return currentUser.id === convDetails.buyer_id 
-      ? convDetails.seller?.username 
-      : convDetails.buyer?.username
-  }
-
   // ---------------------------------------------------------------------------
   // LOADING STATE
   // ---------------------------------------------------------------------------
   if (loading) {
     return (
-      <div className="flex flex-col h-[calc(100vh-64px)] bg-background">
-        <header className="p-4 border-b border-border bg-card/50 backdrop-blur-xl sticky top-0 z-10 flex items-center gap-4">
-          <div className="w-12 h-12 bg-secondary/50 rounded-xl animate-pulse" />
-          <div className="space-y-2">
-            <div className="w-32 h-4 bg-secondary/50 rounded animate-pulse" />
-            <div className="w-16 h-3 bg-secondary/30 rounded animate-pulse" />
-          </div>
-        </header>
-        <div className="flex-1 p-6 space-y-6">
-          <div className="w-2/3 h-12 bg-secondary/30 rounded-2xl animate-pulse" />
-          <div className="w-1/2 h-12 bg-secondary/30 rounded-2xl animate-pulse ml-auto" />
-          <div className="w-3/4 h-16 bg-secondary/30 rounded-2xl animate-pulse" />
-        </div>
+      <div className="h-[100dvh] flex items-center justify-center bg-[#0a0a0a]">
+        <Loader2 className="w-10 h-10 text-primary animate-spin" />
       </div>
     )
   }
@@ -172,124 +152,103 @@ export default function PrivateChatPage() {
   const price = isDeleted ? null : convDetails.listing.price
   const imageUrl = isDeleted ? null : convDetails.listing.image_url
 
-  // ---------------------------------------------------------------------------
-  // OPTIMIZED RENDER
-  // ---------------------------------------------------------------------------
   return (
-    <div className="flex flex-col h-[calc(100vh-64px)] bg-background selection:bg-primary/30">
+    <div className="flex flex-col h-[100dvh] bg-[#0a0a0a] overflow-hidden selection:bg-primary/30">
       
-      {/* Glassmorphic Sticky Header */}
-      <header className={`px-4 md:px-6 py-4 border-b sticky top-0 z-20 flex items-center justify-between shadow-sm transition-colors ${isDeleted ? 'bg-secondary/20 border-border/50' : 'bg-background/80 backdrop-blur-md border-border'}`}>
-        <div className="flex items-center gap-3 md:gap-4 min-w-0">
-          <Link href="/messages" className="text-zinc-500 hover:text-primary transition-colors p-2 -ml-2 rounded-lg hover:bg-secondary/50 shrink-0">
-            ←
+      {/* 1. Glassmorphic Sticky Header */}
+      <header className={`px-4 py-3 border-b shrink-0 flex items-center justify-between z-20 ${isDeleted ? 'bg-zinc-900/50 border-white/5' : 'bg-zinc-900/80 backdrop-blur-xl border-white/10'}`}>
+        <div className="flex items-center gap-3 min-w-0">
+          <Link href="/rooms" className="text-zinc-400 hover:text-white transition-colors p-2 -ml-2 rounded-xl">
+            <ArrowLeft className="w-6 h-6" />
           </Link>
           
-          {/* Dynamic Header Thumbnail */}
-          <div className={`w-10 h-10 md:w-12 md:h-12 rounded-xl overflow-hidden border shrink-0 shadow-sm ${isDeleted ? 'bg-background border-dashed border-zinc-600' : 'bg-secondary border-border'}`}>
+          <div className={`w-10 h-10 rounded-lg overflow-hidden shrink-0 relative ${isDeleted ? 'bg-black border border-dashed border-zinc-700' : 'bg-zinc-800'}`}>
             {imageUrl ? (
               <img src={imageUrl} className="w-full h-full object-cover" alt="Item" />
             ) : (
-              <div className="w-full h-full flex items-center justify-center text-lg md:text-xl opacity-20">
-                {isDeleted ? '🚫' : '📦'}
+              <div className="w-full h-full flex items-center justify-center opacity-50">
+                {isDeleted ? <PackageOpen className="w-5 h-5 text-zinc-600" /> : <PackageOpen className="w-5 h-5 text-white" />}
               </div>
             )}
           </div>
           
-          <div className="min-w-0">
-            <h2 className={`font-bold text-sm md:text-base leading-tight truncate ${isDeleted ? 'text-zinc-500 line-through' : 'text-zinc-100'}`}>
+          <div className="min-w-0 flex flex-col justify-center">
+            <h2 className={`font-bold text-sm leading-tight truncate ${isDeleted ? 'text-zinc-500 line-through' : 'text-zinc-100'}`}>
               {title}
             </h2>
             <div className="flex items-center gap-2 mt-0.5">
               {price && !isDeleted && (
-                <span className="text-[10px] md:text-xs text-primary font-mono font-bold tracking-widest bg-primary/10 px-1.5 py-0.5 rounded shrink-0">
-                  R{price}
-                </span>
+                <span className="text-xs text-primary font-bold">R{price}</span>
               )}
               {isDeleted && (
-                <span className="text-[10px] md:text-xs text-red-500 font-bold bg-red-500/10 px-1.5 py-0.5 rounded shrink-0">
-                  SOLD
-                </span>
+                <span className="text-[10px] text-red-500 font-bold bg-red-500/10 px-1.5 py-0.5 rounded uppercase tracking-wider">Sold</span>
               )}
-              <span className="text-[10px] text-zinc-500 hidden sm:inline truncate">
-                • Chatting with {getPartnerName()}
-              </span>
             </div>
           </div>
         </div>
-        
-        {/* Only show "View Item" if the item still exists in the database */}
-        {!isDeleted && (
-          <Link href={`/listings/${convDetails?.listing_id}`} className="hidden md:block shrink-0 ml-4">
-            <button className="px-4 py-2 bg-secondary/50 hover:bg-secondary text-xs font-bold rounded-lg border border-border transition-colors">
-              View Item
-            </button>
-          </Link>
-        )}
       </header>
 
-      {/* Message History Area */}
-      <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 no-scrollbar scroll-smooth">
+      {/* 2. Message History Area */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar">
         {messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center opacity-50">
-            <div className="text-4xl mb-4">👋</div>
-            <p className="text-sm font-medium">Say hello to {getPartnerName()}!</p>
-            <p className="text-xs mt-1 max-w-xs">Messages are end-to-end encrypted in The Room.</p>
+            <PackageOpen className="w-12 h-12 mb-4 text-zinc-500" />
+            <p className="text-sm font-medium text-white">Start the conversation</p>
+            <p className="text-xs mt-2 max-w-[200px] text-zinc-400">Messages are secure and update in real-time.</p>
           </div>
         ) : (
           messages.map((msg, index) => {
-            const isMe = msg.user_id === currentUser?.id
-            // Group consecutive messages visually
-            const isConsecutive = index > 0 && messages[index - 1].user_id === msg.user_id
+            const isMe = msg.sender_id === currentUser?.id
+            const isConsecutive = index > 0 && messages[index - 1].sender_id === msg.sender_id
 
             return (
               <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} ${isConsecutive ? 'mt-1' : 'mt-4'}`}>
-                <div className={`px-5 py-3 max-w-[85%] md:max-w-[70%] text-sm md:text-base break-words shadow-sm ${
+                <div className={`px-4 py-2.5 max-w-[85%] md:max-w-[70%] text-sm md:text-base break-words ${
                   isMe 
-                  ? 'bg-primary text-white rounded-2xl rounded-tr-sm shadow-primary/20' 
-                  : 'bg-card border border-border text-zinc-200 rounded-2xl rounded-tl-sm'
+                  ? 'bg-primary text-white rounded-2xl rounded-tr-sm shadow-md shadow-primary/10' 
+                  : 'bg-zinc-800 border border-white/5 text-zinc-100 rounded-2xl rounded-tl-sm'
                 }`}>
-                  {msg.text}
+                  {msg.content}
                 </div>
-                {!isConsecutive && (
-                  <span className={`text-[9px] text-zinc-600 mt-1 px-1 font-mono uppercase tracking-wider ${isMe ? 'text-right' : 'text-left'}`}>
-                    {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                )}
               </div>
             )
           })
         )}
-        <div ref={scrollRef} className="h-4" /> {/* Invisible anchor for auto-scroll */}
+        <div ref={scrollRef} className="h-2" /> {/* Invisible anchor for auto-scroll */}
       </div>
 
-      {/* Input Engine - Remains active to coordinate pickup/logistics even if item is sold */}
-      <div className="p-4 bg-background/80 backdrop-blur-md border-t border-border sticky bottom-0 z-20">
+      {/* 3. Input Engine */}
+      <div className="p-4 bg-zinc-900/80 backdrop-blur-xl border-t border-white/10 shrink-0 pb-safe">
         {isDeleted && (
-          <div className="mb-2 text-[10px] text-center text-zinc-500 font-bold uppercase tracking-widest flex items-center justify-center gap-2">
-            <span className="w-2 h-px bg-border flex-1"></span>
-            Item is sold - Chat remains open for logistics
-            <span className="w-2 h-px bg-border flex-1"></span>
+          <div className="mb-3 text-[10px] text-center text-zinc-500 font-bold uppercase tracking-widest flex items-center justify-center gap-2">
+            <span className="w-4 h-px bg-white/10 flex-1"></span>
+            Item is sold - Chat remains open
+            <span className="w-4 h-px bg-white/10 flex-1"></span>
           </div>
         )}
-        <form onSubmit={sendMessage} className="max-w-4xl mx-auto flex gap-3 relative">
+        <form onSubmit={sendMessage} className="max-w-4xl mx-auto flex gap-2 relative">
           <input 
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            placeholder="Type your message..."
+            placeholder="Type a message..."
             disabled={isSending}
-            className="flex-1 bg-secondary/50 border border-border rounded-2xl pl-5 pr-14 py-4 text-sm focus:outline-none focus:border-primary/50 focus:bg-secondary transition-all disabled:opacity-50"
+            className="flex-1 bg-black border border-white/10 rounded-full pl-5 pr-14 py-3.5 text-sm text-white focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50 transition-all disabled:opacity-50"
             autoComplete="off"
           />
           <button 
             type="submit"
             disabled={!message.trim() || isSending}
-            className="absolute right-2 top-2 bottom-2 aspect-square bg-primary text-white font-bold rounded-xl hover:scale-105 active:scale-95 transition-all flex items-center justify-center disabled:opacity-30 disabled:hover:scale-100 disabled:cursor-not-allowed shadow-lg shadow-primary/20"
+            className="absolute right-1 top-1 bottom-1 aspect-square bg-primary hover:bg-blue-600 text-white rounded-full flex items-center justify-center transition-all disabled:opacity-50 disabled:hover:bg-primary shadow-lg shadow-primary/20"
           >
-            ↑
+            {isSending ? (
+              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            ) : (
+              <Send className="w-4 h-4 -ml-0.5 mt-0.5" />
+            )}
           </button>
         </form>
       </div>
+      
     </div>
   )
 }
