@@ -11,6 +11,7 @@ export default function MessagesPage() {
   const [conversations, setConversations] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
+  const [currentUser, setCurrentUser] = useState<any>(null)
 
   useEffect(() => {
     let isMounted = true
@@ -19,6 +20,8 @@ export default function MessagesPage() {
       try {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
+        
+        if (isMounted) setCurrentUser(user)
 
         // Fetch conversations where the user is either the buyer or the seller
         const { data, error } = await supabase
@@ -35,10 +38,10 @@ export default function MessagesPage() {
 
         if (error) throw error
 
-        if (isMounted) {
+        if (isMounted && data) {
           // Format the data to easily identify "the other person" in the chat
           const formattedChats = data.map((conv: any) => {
-            const isBuyer = conv.buyer.id === user.id
+            const isBuyer = conv.buyer?.id === user.id
             return {
               ...conv,
               otherPerson: isBuyer ? conv.seller : conv.buyer,
@@ -56,14 +59,35 @@ export default function MessagesPage() {
 
     fetchConversations()
 
-    return () => { isMounted = false }
+    // --- NEW: THE INBOX WEBSOCKET ENGINE ---
+    // This listens for new rows in the conversations table and updates the UI instantly.
+    const channel = supabase
+      .channel('inbox-updates')
+      .on('postgres_changes', {
+        event: 'INSERT', 
+        schema: 'public', 
+        table: 'conversations'
+      }, (payload) => {
+         fetchConversations()
+      })
+      .subscribe()
+
+    return () => { 
+      isMounted = false 
+      supabase.removeChannel(channel)
+    }
   }, [supabase])
 
-  // Simple search filter based on item title or the other person's name
-  const filteredChats = conversations.filter(chat => 
-    chat.listing?.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    chat.otherPerson?.username?.toLowerCase().includes(searchQuery.toLowerCase())
-  )
+  // --- FIXED: BULLETPROOF SEARCH FILTER ---
+  // Safely handles empty searches and missing profile data
+  const filteredChats = conversations.filter(chat => {
+    if (!searchQuery.trim()) return true; 
+    
+    const titleMatch = chat.listing?.title?.toLowerCase().includes(searchQuery.toLowerCase()) || false;
+    const nameMatch = chat.otherPerson?.username?.toLowerCase().includes(searchQuery.toLowerCase()) || false;
+    
+    return titleMatch || nameMatch;
+  })
 
   return (
     <div className="min-h-screen text-foreground pb-24 pt-8 px-6 selection:bg-primary/30 relative z-10">
