@@ -41,7 +41,7 @@ export default function PrivateChatPage() {
           .from('conversations')
           .select(`
             *, 
-            listing:listing_id (title, price, image_url, status)
+            listing:listing_id (title, price, image_url)
           `)
           .eq('id', id)
           .single()

@@ -2,203 +2,139 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { createClient } from '../../../lib/supabase/client'
+import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import Image from 'next/image'
-import { UserX, Inbox, ArrowLeft, PackageOpen } from 'lucide-react'
+import { ArrowLeft, CheckCircle, PackageOpen, User as UserIcon } from 'lucide-react'
 
-export default function UserProfilePage() {
+export default function PublicProfilePage() {
   const { id } = useParams()
+  const router = useRouter()
   const supabase = createClient()
   
   const [profile, setProfile] = useState<any>(null)
   const [listings, setListings] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [isNotFound, setIsNotFound] = useState(false)
 
   useEffect(() => {
-    let isMounted = true;
-
-    const fetchUserData = async () => {
+    const fetchProfileAndListings = async () => {
       try {
         setLoading(true)
         
-        const { data: userProfile, error: profileError } = await supabase
+        // 1. Fetch the user's public profile
+        const { data: profileData, error: profileError } = await supabase
           .from('profiles')
-          .select('username, student_number, created_at')
+          .select('*')
           .eq('id', id)
           .single()
 
-        if (profileError && profileError.code === 'PGRST116') {
-          if (isMounted) setIsNotFound(true)
-          return
-        }
-        
-        if (isMounted) setProfile(userProfile)
+        if (profileError) throw profileError
+        setProfile(profileData)
 
-        const { data: userListings, error: listingsError } = await supabase
+        // 2. Fetch all active items this user is selling
+        const { data: listingsData, error: listingsError } = await supabase
           .from('listings')
           .select('*')
           .eq('user_id', id)
           .order('created_at', { ascending: false })
 
-        if (!listingsError && isMounted) {
-          setListings(userListings || [])
+        if (!listingsError && listingsData) {
+          setListings(listingsData)
         }
 
       } catch (error) {
-        console.error("Profile fetch error:", error)
-        if (isMounted) setIsNotFound(true)
+        console.error("Error loading profile:", error)
+        // If the profile doesn't exist, send them back to the feed
+        router.push('/rooms')
       } finally {
-        if (isMounted) setLoading(false)
+        setLoading(false)
       }
     }
 
-    if (id) fetchUserData()
-
-    return () => {
-      isMounted = false;
-    }
-  }, [id, supabase])
+    if (id) fetchProfileAndListings()
+  }, [id, router, supabase])
 
   if (loading) {
     return (
-      <div className="min-h-screen pt-12 pb-24 px-6 max-w-6xl mx-auto">
-        <div className="w-32 h-6 bg-white/5 rounded-md animate-pulse mb-8" />
-        <div className="w-full h-48 bg-card/10 border border-white/5 rounded-[2.5rem] animate-pulse mb-12" />
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-          {[1, 2, 3].map(i => (
-            <div key={i} className="h-80 bg-card/10 rounded-[2rem] border border-white/5 animate-pulse" />
-          ))}
-        </div>
-      </div>
-    )
-  }
-
-  if (isNotFound || !profile) {
-    return (
-      <div className="min-h-[calc(100vh-64px)] flex flex-col items-center justify-center px-6">
-        <div className="max-w-md text-center bg-card/10 backdrop-blur-2xl border border-white/5 rounded-[2.5rem] p-10 shadow-2xl">
-          <UserX className="w-16 h-16 text-zinc-600 mb-6 mx-auto" />
-          <h1 className="text-3xl font-black mb-3 tracking-tight">Profile Not Found</h1>
-          <p className="text-zinc-400 font-medium leading-relaxed mb-8">
-            This user either does not exist or has deleted their account from The Room.
-          </p>
-          <Link href="/rooms" className="w-full block">
-            <button className="w-full py-4 bg-primary text-white font-bold rounded-2xl transition-all shadow-xl shadow-primary/20 active:scale-95">
-              Return to Community
-            </button>
-          </Link>
+      <div className="min-h-screen pt-24 px-6 flex justify-center bg-[#0a0a0a]">
+        <div className="flex flex-col items-center animate-pulse">
+          <div className="w-24 h-24 bg-zinc-800 rounded-full mb-4" />
+          <div className="w-48 h-6 bg-zinc-800 rounded-md mb-2" />
+          <div className="w-32 h-4 bg-zinc-800 rounded-md" />
         </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen text-foreground pb-24 pt-8 px-6 selection:bg-primary/30 relative z-10">
+    <div className="min-h-screen pb-24 pt-8 px-6 bg-[#0a0a0a] selection:bg-primary/30">
       <div className="max-w-6xl mx-auto">
         
-        <div className="animate-in slide-in-from-left-4 fade-in duration-700 fill-mode-both">
-          <Link href="/rooms" className="inline-flex items-center gap-3 text-zinc-500 hover:text-primary transition-colors duration-300 mb-8 group font-medium bg-white/5 px-4 py-2 rounded-xl backdrop-blur-md border border-white/5 hover:border-primary/30">
-            <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" /> Back to Discover
-          </Link>
-        </div>
+        {/* Back Button */}
+        <Link href="/rooms" className="inline-flex items-center gap-3 text-zinc-500 hover:text-primary transition-colors duration-300 mb-8 font-medium bg-white/5 px-4 py-2 rounded-xl backdrop-blur-md border border-white/5">
+          <ArrowLeft className="w-4 h-4" /> Back
+        </Link>
 
-        <div className="animate-in slide-in-from-bottom-8 fade-in duration-1000 fill-mode-both bg-card/10 backdrop-blur-2xl border border-white/5 rounded-[2.5rem] p-8 md:p-12 mb-16 shadow-2xl relative overflow-hidden group">
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[80%] h-[1px] bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
+        {/* Profile Header Card */}
+        <div className="bg-zinc-900/50 backdrop-blur-2xl border border-white/10 rounded-[2rem] p-8 md:p-12 mb-12 shadow-2xl flex flex-col md:flex-row items-center md:items-start gap-8 relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary/50 via-blue-500 to-transparent" />
           
-          <div className="flex flex-col md:flex-row items-center md:items-start gap-8 relative z-10">
-            <div className="relative">
-              <div className="w-28 h-28 md:w-32 md:h-32 rounded-full bg-gradient-to-br from-primary to-indigo-600 p-1 flex-shrink-0 shadow-[0_0_40px_rgba(37,99,235,0.3)] group-hover:shadow-[0_0_60px_rgba(37,99,235,0.5)] transition-all duration-500">
-                <div className="w-full h-full bg-[#0a0a0a] rounded-full flex items-center justify-center text-4xl font-black text-white border-4 border-[#0a0a0a]">
-                  {profile.username ? profile.username.substring(0, 1).toUpperCase() : 'ST'}
-                </div>
-              </div>
-              <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 px-3 py-1 bg-green-500/10 backdrop-blur-md border border-green-500/30 text-green-400 text-[10px] font-black uppercase tracking-widest rounded-lg shadow-lg">
-                Verified
-              </div>
-            </div>
-
-            <div className="text-center md:text-left flex-1 mt-2">
-              <h1 className="text-3xl md:text-4xl font-black tracking-tight mb-2 text-white">
-                {profile.username || 'CPUT Student'}
-              </h1>
-              
-              <div className="flex flex-wrap items-center justify-center md:justify-start gap-4 text-sm font-medium">
-                <div className="flex items-center gap-2 text-primary bg-primary/10 px-3 py-1.5 rounded-xl border border-primary/20">
-                  <span className="opacity-70">ID:</span> 
-                  <span className="font-mono tracking-wider">•••••••{profile.student_number?.slice(-3) || '•••'}</span>
-                </div>
-                {profile.created_at && (
-                  <div className="text-zinc-500">
-                    Joined {new Date(profile.created_at).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="flex gap-6 mt-4 md:mt-0 px-6 py-4 bg-black/20 rounded-2xl border border-white/5 shrink-0">
-              <div className="text-center">
-                <div className="text-2xl font-black text-white">{listings.length}</div>
-                <div className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold mt-1">Active Listings</div>
-              </div>
-            </div>
+          <div className="w-24 h-24 md:w-32 md:h-32 rounded-full bg-zinc-800 flex items-center justify-center text-4xl md:text-5xl font-bold text-zinc-300 border-4 border-zinc-900 shadow-xl shrink-0">
+            {profile?.username?.substring(0, 1).toUpperCase() || <UserIcon className="w-12 h-12 text-zinc-600" />}
+          </div>
+          
+          <div className="flex-1 text-center md:text-left flex flex-col justify-center">
+            <h1 className="text-3xl md:text-4xl font-black text-white mb-2 tracking-tight">
+              {profile?.username || 'Verified Student'}
+            </h1>
+            <p className="text-primary font-bold flex items-center justify-center md:justify-start gap-2 mb-4">
+              Verified CPUT Student <CheckCircle className="w-5 h-5" />
+            </p>
+            <p className="text-zinc-400 font-medium">
+              Member since {new Date(profile?.created_at || Date.now()).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+            </p>
+          </div>
+          
+          <div className="bg-black/40 px-6 py-4 rounded-2xl border border-white/5 text-center shrink-0">
+            <div className="text-3xl font-black text-white mb-1">{listings.length}</div>
+            <div className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Active Listings</div>
           </div>
         </div>
 
-        <div className="animate-in fade-in duration-1000 fill-mode-both delay-300">
-          <h2 className="text-2xl font-black tracking-tight mb-8">Active in The Room</h2>
-
-          {listings.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 border border-white/5 rounded-[2.5rem] bg-card/10 backdrop-blur-xl text-center px-6">
-               <Inbox className="w-12 h-12 text-zinc-600 mb-4 mx-auto" />
-               <p className="text-zinc-400 font-medium">This student currently has no active listings.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-              {listings.map((item, index) => (
-                <div 
-                  key={item.id}
-                  className="animate-in slide-in-from-bottom-8 fade-in duration-700 fill-mode-both group relative flex flex-col rounded-[2rem] bg-card/10 backdrop-blur-2xl border border-white/5 hover:border-primary/40 transition-all duration-500 overflow-hidden shadow-lg hover:shadow-2xl hover:shadow-primary/10 hover:-translate-y-1"
-                  style={{ animationDelay: `${index * 50}ms` }}
-                >
-                  <div className="h-48 w-full bg-[#0a0a0a] relative overflow-hidden border-b border-white/5">
-                    {item.image_url ? (
-                      <Image src={item.image_url} alt={item.title} fill sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw" className="object-cover transition-transform duration-700 group-hover:scale-110" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center bg-white/5">
-                        <PackageOpen className="w-10 h-10 text-zinc-700" />
-                      </div>
-                    )}
-                    <div className="absolute top-4 left-4 px-3 py-1 bg-black/60 backdrop-blur-xl rounded-lg text-[10px] font-bold text-white uppercase tracking-widest border border-white/10">
-                      {item.category}
+        {/* Seller's Items Grid */}
+        <h3 className="text-xl font-bold text-white mb-6">Items for sale by this student</h3>
+        
+        {listings.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 bg-zinc-900/30 border border-white/5 rounded-3xl text-center">
+            <PackageOpen className="w-16 h-16 text-zinc-600 mb-4" />
+            <h3 className="text-xl font-bold text-zinc-300 mb-2">No active items</h3>
+            <p className="text-zinc-500">This user isn't selling anything right now.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {listings.map((item) => (
+              <Link href={`/listings/${item.id}`} key={item.id} className="group bg-zinc-900 border border-white/5 rounded-3xl overflow-hidden flex flex-col hover:border-white/20 transition-all hover:shadow-xl hover:-translate-y-1">
+                <div className="relative aspect-video w-full bg-black overflow-hidden border-b border-white/5">
+                  {item.image_url ? (
+                    <Image src={item.image_url} alt={item.title} fill className="object-cover group-hover:scale-105 transition-transform duration-700" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <PackageOpen className="w-10 h-10 text-zinc-700" />
                     </div>
-                  </div>
-
-                  <div className="p-6 flex-1 flex flex-col">
-                    <div className="flex justify-between items-start mb-3 gap-4">
-                      <h3 className="text-lg font-bold text-zinc-100 group-hover:text-primary transition-colors leading-tight line-clamp-2">
-                        {item.title}
-                      </h3>
-                      <span className="text-primary font-mono font-black text-base bg-primary/10 px-2 py-1 rounded-lg border border-primary/20 shrink-0">
-                        R{item.price}
-                      </span>
-                    </div>
-                    
-                    <div className="mt-auto pt-5">
-                      <Link href={`/listings/${item.id}`} className="block w-full">
-                        <button className="w-full px-5 py-3 bg-white/5 hover:bg-primary text-white text-xs font-bold rounded-xl border border-white/10 hover:border-primary transition-all duration-300 shadow-sm active:scale-95 group-hover:shadow-primary/20">
-                          View Details
-                        </button>
-                      </Link>
-                    </div>
+                  )}
+                  <div className="absolute top-4 left-4 px-3 py-1 bg-black/80 backdrop-blur-md rounded-lg text-[10px] font-bold text-white uppercase tracking-widest border border-white/10">
+                    {item.category}
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-        
+                <div className="p-5 flex flex-col flex-grow justify-between gap-4">
+                  <h3 className="font-bold text-lg text-white leading-tight line-clamp-2 group-hover:text-primary transition-colors">{item.title}</h3>
+                  <span className="text-primary font-bold text-xl tracking-tight">R{item.price}</span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+
       </div>
     </div>
   )
