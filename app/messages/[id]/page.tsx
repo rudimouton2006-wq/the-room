@@ -10,14 +10,14 @@ export default function PrivateChatPage() {
   const { id } = useParams()
   const router = useRouter()
   const supabase = createClient()
-  
+
   const [message, setMessage] = useState('')
   const [messages, setMessages] = useState<any[]>([])
   const [currentUser, setCurrentUser] = useState<any>(null)
   const [convDetails, setConvDetails] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [isSending, setIsSending] = useState(false)
-  
+
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -26,28 +26,28 @@ export default function PrivateChatPage() {
     const setupChat = async () => {
       try {
         setLoading(true)
-        
+
         // 1. Authenticate
         const { data: { user }, error: authError } = await supabase.auth.getUser()
         if (authError || !user) {
           router.push('/login')
           return
         }
-        
+
         if (isMounted) setCurrentUser(user)
 
         // 2. Fetch Conversation & Listing Context
         const { data: conv, error: convError } = await supabase
           .from('conversations')
           .select(`
-            *, 
-            listing:listing_id (title, price, image_url)
+            *,
+            listing:listing_id (title, price, image_url, status)
           `)
           .eq('id', id)
           .single()
-          
+
         if (convError || !conv) throw new Error("Conversation not found")
-        
+
         // Security Check: Ensure user belongs in this chat
         if (user.id !== conv.buyer_id && user.id !== conv.seller_id) {
           router.push('/rooms')
@@ -79,11 +79,11 @@ export default function PrivateChatPage() {
     // 4. Initialize Real-Time WebSocket Subscription
     const channel = supabase
       .channel(`conv-${id}`)
-      .on('postgres_changes', { 
-        event: 'INSERT', 
-        schema: 'public', 
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
         table: 'messages',
-        filter: `conversation_id=eq.${id}` 
+        filter: `conversation_id=eq.${id}`
       }, (payload) => {
         if (isMounted) {
           // Instantly add the new message to the screen when the database updates
@@ -92,9 +92,9 @@ export default function PrivateChatPage() {
       })
       .subscribe()
 
-    return () => { 
+    return () => {
       isMounted = false;
-      supabase.removeChannel(channel) 
+      supabase.removeChannel(channel)
     }
   }, [id, router, supabase])
 
@@ -108,7 +108,7 @@ export default function PrivateChatPage() {
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!message.trim() || !currentUser || isSending) return
-    
+
     const textToSend = message.trim()
     setMessage('') // Instant optimistic UI clear
     setIsSending(true)
@@ -154,14 +154,14 @@ export default function PrivateChatPage() {
 
   return (
     <div className="flex flex-col h-[100dvh] bg-[#0a0a0a] overflow-hidden selection:bg-primary/30">
-      
+
       {/* 1. Glassmorphic Sticky Header */}
       <header className={`px-4 py-3 border-b shrink-0 flex items-center justify-between z-20 ${isDeleted ? 'bg-zinc-900/50 border-white/5' : 'bg-zinc-900/80 backdrop-blur-xl border-white/10'}`}>
         <div className="flex items-center gap-3 min-w-0">
           <Link href="/rooms" className="text-zinc-400 hover:text-white transition-colors p-2 -ml-2 rounded-xl">
             <ArrowLeft className="w-6 h-6" />
           </Link>
-          
+
           <div className={`w-10 h-10 rounded-lg overflow-hidden shrink-0 relative ${isDeleted ? 'bg-black border border-dashed border-zinc-700' : 'bg-zinc-800'}`}>
             {imageUrl ? (
               <img src={imageUrl} className="w-full h-full object-cover" alt="Item" />
@@ -171,7 +171,7 @@ export default function PrivateChatPage() {
               </div>
             )}
           </div>
-          
+
           <div className="min-w-0 flex flex-col justify-center">
             <h2 className={`font-bold text-sm leading-tight truncate ${isDeleted ? 'text-zinc-500 line-through' : 'text-zinc-100'}`}>
               {title}
@@ -204,9 +204,9 @@ export default function PrivateChatPage() {
             return (
               <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} ${isConsecutive ? 'mt-1' : 'mt-4'}`}>
                 <div className={`px-4 py-2.5 max-w-[85%] md:max-w-[70%] text-sm md:text-base break-words ${
-                  isMe 
-                  ? 'bg-primary text-white rounded-2xl rounded-tr-sm shadow-md shadow-primary/10' 
-                  : 'bg-zinc-800 border border-white/5 text-zinc-100 rounded-2xl rounded-tl-sm'
+                  isMe
+                    ? 'bg-primary text-white rounded-2xl rounded-tr-sm shadow-md shadow-primary/10'
+                    : 'bg-zinc-800 border border-white/5 text-zinc-100 rounded-2xl rounded-tl-sm'
                 }`}>
                   {msg.content}
                 </div>
@@ -227,7 +227,7 @@ export default function PrivateChatPage() {
           </div>
         )}
         <form onSubmit={sendMessage} className="max-w-4xl mx-auto flex gap-2 relative">
-          <input 
+          <input
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             placeholder="Type a message..."
@@ -235,7 +235,7 @@ export default function PrivateChatPage() {
             className="flex-1 bg-black border border-white/10 rounded-full pl-5 pr-14 py-3.5 text-sm text-white focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50 transition-all disabled:opacity-50"
             autoComplete="off"
           />
-          <button 
+          <button
             type="submit"
             disabled={!message.trim() || isSending}
             className="absolute right-1 top-1 bottom-1 aspect-square bg-primary hover:bg-blue-600 text-white rounded-full flex items-center justify-center transition-all disabled:opacity-50 disabled:hover:bg-primary shadow-lg shadow-primary/20"
@@ -248,7 +248,7 @@ export default function PrivateChatPage() {
           </button>
         </form>
       </div>
-      
+
     </div>
   )
 }
