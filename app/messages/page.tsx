@@ -23,31 +23,46 @@ export default function MessagesPage() {
         
         if (isMounted) setCurrentUser(user)
 
-        // Fetch conversations where the user is either the buyer or the seller
-        const { data, error } = await supabase
+        // APEX FIX: Decoupled Query. 
+        // We remove the complex 'profiles' JOIN to bypass silent database crashes.
+        // We fetch the core conversation data first.
+        const { data: rawConversations, error } = await supabase
           .from('conversations')
           .select(`
             id,
             created_at,
-            listing:listings (id, title, image_url, price),
-            buyer:profiles!buyer_id (id, username, student_number),
-            seller:profiles!seller_id (id, username, student_number)
+            buyer_id,
+            seller_id,
+            listing:listings (id, title, image_url, price)
           `)
           .or(`buyer_id.eq.${user.id},seller_id.eq.${user.id}`)
           .order('created_at', { ascending: false })
 
-        if (error) throw error
+        if (error) {
+          console.error("Supabase Query Error:", error)
+          throw error
+        }
 
-        if (isMounted && data) {
-          // Format the data to easily identify "the other person" in the chat
-          const formattedChats = data.map((conv: any) => {
-            const isBuyer = conv.buyer?.id === user.id
+        if (isMounted && rawConversations) {
+          // Manually stitch the profile data safely so a missing profile doesn't crash the inbox
+          const formattedChats = await Promise.all(rawConversations.map(async (conv: any) => {
+            const isBuyer = conv.buyer_id === user.id
+            const otherPersonId = isBuyer ? conv.seller_id : conv.buyer_id
+            
+            // Safe fetch for the other person's profile
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('username')
+              .eq('id', otherPersonId)
+              .single()
+
             return {
               ...conv,
-              otherPerson: isBuyer ? conv.seller : conv.buyer,
+              otherPerson: { username: profile?.username || 'Student' },
               role: isBuyer ? 'Buying' : 'Selling'
             }
-          })
+          }))
+          
           setConversations(formattedChats)
         }
       } catch (error) {
@@ -59,15 +74,14 @@ export default function MessagesPage() {
 
     fetchConversations()
 
-    // --- NEW: THE INBOX WEBSOCKET ENGINE ---
-    // This listens for new rows in the conversations table and updates the UI instantly.
+    // Bulletproof WebSocket listener for the inbox
     const channel = supabase
       .channel('inbox-updates')
       .on('postgres_changes', {
-        event: 'INSERT', 
+        event: '*', // Listen to ALL events (Insert, Update, Delete) to ensure sync
         schema: 'public', 
         table: 'conversations'
-      }, (payload) => {
+      }, () => {
          fetchConversations()
       })
       .subscribe()
@@ -78,8 +92,7 @@ export default function MessagesPage() {
     }
   }, [supabase])
 
-  // --- FIXED: BULLETPROOF SEARCH FILTER ---
-  // Safely handles empty searches and missing profile data
+  // Safely handles empty searches and deleted items
   const filteredChats = conversations.filter(chat => {
     if (!searchQuery.trim()) return true; 
     
@@ -100,7 +113,7 @@ export default function MessagesPage() {
           <p className="text-zinc-400 font-medium">Chat with buyers and sellers on campus.</p>
         </header>
 
-        {/* Simple Search Bar */}
+        {/* Search Bar */}
         <div className="mb-8 animate-in slide-in-from-bottom-4 fade-in duration-700 delay-100">
           <div className="relative group/search">
             <div className="absolute inset-y-0 left-5 flex items-center pointer-events-none">
